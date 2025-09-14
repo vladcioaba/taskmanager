@@ -5,6 +5,7 @@ A full-stack task management application built with .NET Web API backend and Rea
 ## Features
 
 - **CRUD Operations**: Complete Create, Read, Update, and Delete functionality for tasks
+- **CQRS Architecture**: Clean separation of read (Queries) and write (Commands) operations
 - **Priority Management**: Three-level priority system (Low, Medium, High)
 - **Task Status Tracking**: Mark tasks as completed or active with automatic timestamp management
 - **Advanced Filtering**: Filter tasks by completion status and priority level
@@ -12,18 +13,45 @@ A full-stack task management application built with .NET Web API backend and Rea
 - **Real-time Updates**: Immediate UI feedback for all operations
 - **Comprehensive Validation**: Both client-side and server-side data validation
 - **In-memory Database**: Fast development setup using Entity Framework Core
+- **Feature-Based Organization**: Organized by business features with Commands/Queries/Handlers
 
 ## System Architecture
 
 ```
-┌──────────────────┐    HTTP/JSON     ┌──────────────────┐
-│   React Frontend │ ◄──────────────► │  .NET Web API    │
-│                  │                  │     Backend      │
-│  • TaskManager   │                  │                  │
-│  • TaskCard      │                  │ • TasksController│
-│  • TaskForm      │                  │ • TaskItem Model │
-│  • API Service   │                  │ • EF DbContext   │
-└──────────────────┘                  └──────────────────┘
+┌──────────────────┐    HTTP/JSON     ┌──────────────────────────────────────┐
+│   React Frontend │ ◄──────────────► │          .NET Web API                │
+│                  │                  │           Backend                    │
+│  • TaskManager   │                  │                                      │
+│  • TaskCard      │                  │  ┌─────────────────┐                 │
+│  • TaskForm      │                  │  │ TasksController │                 │
+│  • API Service   │                  │  └────────┬────────┘                 │
+└──────────────────┘                  │           │                          │
+                                      │           ▼                          │
+                                      │  ┌─────────────────┐                 │
+                                      │  │   IDispatcher   │                 │
+                                      │  └────────┬────────┘                 │
+                                      │           │                          │
+                   ┌──────────────────┼───────────┼───────────┬──────────────┤
+                   │     QUERIES      │           │  COMMANDS │              │
+                   │                  │           │           │              │
+                   │ ┌──────────────┐ │           │ ┌───────────────────┐    │
+                   │ │GetTasksQuery │ │           │ │CreateTaskCommand  │    │
+                   │ │GetTaskByIdQ. │ │           │ │UpdateTaskCommand  │    │
+                   │ └──────┬───────┘ │           │ │DeleteTaskCommand  │    │
+                   │        │         │           │ └─────────┬─────────┘    │
+                   │        ▼         │           │           ▼              │
+                   │ ┌──────────────┐ │           │ ┌───────────────────┐    │
+                   │ │Query Handlers│ │           │ │Command Handlers   │    │
+                   │ └──────┬───────┘ │           │ └─────────┬─────────┘    │
+                   └────────┼─────────┼───────────┼───────────┼──────────────┤
+                            │         │           │           │              │
+                            └─────────┼───────────┼───────────┘              │
+                                      │           │                          │
+                                      │           ▼                          │
+                                      │  ┌─────────────────┐                 │
+                                      │  │  TaskItem Model │                 │
+                                      │  │  EF DbContext   │                 │
+                                      └──┴─────────────────┴─────────────────┘
                                                │
                                                ▼
                                      ┌───────────────────┐
@@ -33,13 +61,25 @@ A full-stack task management application built with .NET Web API backend and Rea
 ```
 
 ### Backend Architecture (.NET Web API)
-- **Models**: `TaskItem` with validation attributes
-- **DTOs**: Separate Create/Update/Response DTOs for clean API design
-- **Controller**: `TasksController` with full CRUD operations
+
+**CQRS Pattern Implementation**
+- **Controller**: `TasksController` handles HTTP requests and delegates to dispatcher
+- **Dispatcher**: `IDispatcher` routes queries and commands to appropriate handlers
+- **Queries**: Read operations (`GetTasksQuery`, `GetTaskByIdQuery`) 
+- **Commands**: Write operations (`CreateTaskCommand`, `UpdateTaskCommand`, `DeleteTaskCommand`)
+- **Handlers**: Separate handlers for each query/command with single responsibility
+- **Models**: `TaskItem` entity with validation attributes
+- **DTOs**: Clean separation with Create/Update/Response DTOs
 - **Database**: Entity Framework Core with In-Memory provider
 - **Validation**: Data annotations and model validation
 - **Error Handling**: Global exception handling and structured error responses
 - **CORS**: Configured for frontend communication
+
+**CQRS Benefits**
+- **Separation of Concerns**: Clear distinction between read and write operations
+- **Testability**: Easy to mock and unit test individual handlers
+- **Maintainability**: Feature-based organization with Commands/Queries/Handlers
+- **Scalability**: Can optimize read and write operations independently
 
 ### Frontend Architecture (React + TypeScript)
 - **Components**: 
@@ -56,6 +96,7 @@ A full-stack task management application built with .NET Web API backend and Rea
 
 ### Backend
 - **.NET 9.0** - Web API framework
+- **CQRS Pattern** - Custom implementation for separation of concerns
 - **Entity Framework Core** - ORM with In-Memory database
 - **System.ComponentModel.DataAnnotations** - Model validation
 - **CORS** - Cross-origin resource sharing
@@ -75,21 +116,41 @@ TaskManager/
 ├── backend/
 │   ├── TaskManagerApi/
 │   │   ├── Controllers/
-│   │   │   └── TasksController.cs
+│   │   │   └── TasksController.cs        # HTTP API endpoints
+│   │   ├── CQRS/                         # CQRS Infrastructure
+│   │   │   ├── IQuery.cs                 # Query interface
+│   │   │   ├── ICommand.cs               # Command interfaces
+│   │   │   ├── IDispatcher.cs            # Dispatcher interface
+│   │   │   └── Dispatcher.cs             # Command/Query dispatcher
+│   │   ├── Features/                     # Feature-based organization
+│   │   │   └── Tasks/
+│   │   │       ├── Commands/             # Write operations
+│   │   │       │   ├── CreateTaskCommand.cs
+│   │   │       │   ├── UpdateTaskCommand.cs
+│   │   │       │   └── DeleteTaskCommand.cs
+│   │   │       ├── Queries/              # Read operations
+│   │   │       │   ├── GetTasksQuery.cs
+│   │   │       │   └── GetTaskByIdQuery.cs
+│   │   │       └── Handlers/             # Business logic
+│   │   │           ├── CreateTaskCommandHandler.cs
+│   │   │           ├── UpdateTaskCommandHandler.cs
+│   │   │           ├── DeleteTaskCommandHandler.cs
+│   │   │           ├── GetTasksQueryHandler.cs
+│   │   │           └── GetTaskByIdQueryHandler.cs
 │   │   ├── Models/
-│   │   │   └── TaskItem.cs
+│   │   │   └── TaskItem.cs               # Domain entity
 │   │   ├── DTOs/
-│   │   │   └── TaskDTOs.cs
+│   │   │   └── TaskDTOs.cs               # Data transfer objects
 │   │   ├── Data/
-│   │   │   └── TaskManagerContext.cs
-│   │   └── Program.cs
-│   └── TaskManagerApi.Tests/           # Comprehensive Test Suite
+│   │   │   └── TaskManagerContext.cs     # EF DbContext
+│   │   └── Program.cs                    # Application startup
+│   └── TaskManagerApi.Tests/             # Comprehensive Test Suite
 │       ├── Controllers/
-│       │   └── TasksControllerTests.cs  # Unit tests for API
+│       │   └── TasksControllerTests.cs   # Unit tests with CQRS mocking
 │       ├── Integration/
-│       │   └── TasksIntegrationTests.cs # End-to-end API tests
+│       │   └── TasksIntegrationTests.cs  # End-to-end API tests
 │       └── Models/
-│           └── TaskValidationTests.cs   # Model validation tests
+│           └── TaskValidationTests.cs    # Model validation tests
 └── frontend/
     └── task-manager-ui/
         ├── src/
@@ -252,31 +313,25 @@ backend/TaskManagerApi.Tests/
 ### Test Coverage
 
 #### **1. Unit Tests (`TasksControllerTests`)**
-Comprehensive testing of the TasksController with **18+ test methods**:
+Comprehensive testing of the TasksController with CQRS architecture using **8 focused test methods**:
 
-- **GET Operations**:
-  - ✅ Get all tasks (unfiltered)
-  - ✅ Filter by completion status (`?isCompleted=true/false`)
-  - ✅ Filter by priority level (`?priority=High/Medium/Low`)
-  - ✅ Get single task by ID
+- **CQRS Query Testing** (IDispatcher mocking):
+  - ✅ Get all tasks - mocks `GetTasksQuery` dispatch
+  - ✅ Get single task by ID - mocks `GetTaskByIdQuery` dispatch
   - ✅ Handle non-existent task IDs (404 responses)
 
-- **POST Operations**:
-  - ✅ Create tasks with valid data
-  - ✅ Validation error handling (empty titles, invalid data)
-  - ✅ Database constraint validation
-  - ✅ Proper HTTP 201 Created responses
-
-- **PUT Operations**:
-  - ✅ Update existing tasks
-  - ✅ Task completion state management (sets/clears `CompletedAt`)
+- **CQRS Command Testing** (IDispatcher mocking):
+  - ✅ Create tasks - mocks `CreateTaskCommand` dispatch
+  - ✅ Update existing tasks - mocks `UpdateTaskCommand` dispatch
   - ✅ Handle updates to non-existent tasks
-  - ✅ Validation during updates
-
-- **DELETE Operations**:
-  - ✅ Successfully delete existing tasks
+  - ✅ Delete tasks - mocks `DeleteTaskCommand` dispatch
   - ✅ Handle deletion of non-existent tasks
-  - ✅ Proper HTTP 204 No Content responses
+
+- **CQRS Architecture Benefits in Testing**:
+  - ✅ Clean separation: Controller logic vs business logic
+  - ✅ Easy mocking of IDispatcher interface
+  - ✅ Focused testing without database dependencies
+  - ✅ Verification of correct command/query dispatching
 
 #### **2. Integration Tests (`TasksIntegrationTests`)**
 Full-stack API testing with real HTTP requests using **12+ test scenarios**:

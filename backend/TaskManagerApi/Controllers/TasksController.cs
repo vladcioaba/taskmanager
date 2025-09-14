@@ -1,7 +1,8 @@
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using TaskManagerApi.Data;
+using TaskManagerApi.CQRS;
 using TaskManagerApi.DTOs;
+using TaskManagerApi.Features.Tasks.Commands;
+using TaskManagerApi.Features.Tasks.Queries;
 using TaskManagerApi.Models;
 
 namespace TaskManagerApi.Controllers
@@ -10,12 +11,12 @@ namespace TaskManagerApi.Controllers
     [ApiController]
     public class TasksController : ControllerBase
     {
-        private readonly TaskManagerContext _context;
+        private readonly IDispatcher _dispatcher;
         private readonly ILogger<TasksController> _logger;
 
-        public TasksController(TaskManagerContext context, ILogger<TasksController> logger)
+        public TasksController(IDispatcher dispatcher, ILogger<TasksController> logger)
         {
-            _context = context;
+            _dispatcher = dispatcher;
             _logger = logger;
         }
 
@@ -25,32 +26,8 @@ namespace TaskManagerApi.Controllers
         {
             try
             {
-                var query = _context.Tasks.AsQueryable();
-
-                if (isCompleted.HasValue)
-                {
-                    query = query.Where(t => t.IsCompleted == isCompleted.Value);
-                }
-
-                if (priority.HasValue)
-                {
-                    query = query.Where(t => t.Priority == priority.Value);
-                }
-
-                var tasks = await query
-                    .OrderByDescending(t => t.CreatedAt)
-                    .Select(t => new TaskResponseDto
-                    {
-                        Id = t.Id,
-                        Title = t.Title,
-                        Description = t.Description,
-                        IsCompleted = t.IsCompleted,
-                        CreatedAt = t.CreatedAt,
-                        CompletedAt = t.CompletedAt,
-                        Priority = t.Priority
-                    })
-                    .ToListAsync();
-
+                var query = new GetTasksQuery(isCompleted, priority);
+                var tasks = await _dispatcher.DispatchAsync(query, CancellationToken.None);
                 return Ok(tasks);
             }
             catch (Exception ex)
@@ -66,25 +43,15 @@ namespace TaskManagerApi.Controllers
         {
             try
             {
-                var task = await _context.Tasks.FindAsync(id);
+                var query = new GetTaskByIdQuery(id);
+                var task = await _dispatcher.DispatchAsync(query, CancellationToken.None);
 
                 if (task == null)
                 {
                     return NotFound($"Task with ID {id} not found");
                 }
 
-                var taskResponse = new TaskResponseDto
-                {
-                    Id = task.Id,
-                    Title = task.Title,
-                    Description = task.Description,
-                    IsCompleted = task.IsCompleted,
-                    CreatedAt = task.CreatedAt,
-                    CompletedAt = task.CompletedAt,
-                    Priority = task.Priority
-                };
-
-                return Ok(taskResponse);
+                return Ok(task);
             }
             catch (Exception ex)
             {
@@ -104,29 +71,10 @@ namespace TaskManagerApi.Controllers
                     return BadRequest(ModelState);
                 }
 
-                var task = new TaskItem
-                {
-                    Title = taskCreateDto.Title,
-                    Description = taskCreateDto.Description,
-                    Priority = taskCreateDto.Priority,
-                    CreatedAt = DateTime.UtcNow
-                };
+                var command = new CreateTaskCommand(taskCreateDto);
+                var taskResponse = await _dispatcher.DispatchAsync(command, CancellationToken.None);
 
-                _context.Tasks.Add(task);
-                await _context.SaveChangesAsync();
-
-                var taskResponse = new TaskResponseDto
-                {
-                    Id = task.Id,
-                    Title = task.Title,
-                    Description = task.Description,
-                    IsCompleted = task.IsCompleted,
-                    CreatedAt = task.CreatedAt,
-                    CompletedAt = task.CompletedAt,
-                    Priority = task.Priority
-                };
-
-                return CreatedAtAction(nameof(GetTask), new { id = task.Id }, taskResponse);
+                return CreatedAtAction(nameof(GetTask), new { id = taskResponse.Id }, taskResponse);
             }
             catch (Exception ex)
             {
@@ -141,53 +89,13 @@ namespace TaskManagerApi.Controllers
         {
             try
             {
-                var task = await _context.Tasks.FindAsync(id);
-                if (task == null)
+                var command = new UpdateTaskCommand(id, taskUpdateDto);
+                var taskResponse = await _dispatcher.DispatchAsync(command, CancellationToken.None);
+
+                if (taskResponse == null)
                 {
                     return NotFound($"Task with ID {id} not found");
                 }
-
-                // Update only provided fields
-                if (!string.IsNullOrWhiteSpace(taskUpdateDto.Title))
-                {
-                    task.Title = taskUpdateDto.Title;
-                }
-
-                if (taskUpdateDto.Description != null)
-                {
-                    task.Description = taskUpdateDto.Description;
-                }
-
-                if (taskUpdateDto.IsCompleted.HasValue)
-                {
-                    task.IsCompleted = taskUpdateDto.IsCompleted.Value;
-                    if (task.IsCompleted && task.CompletedAt == null)
-                    {
-                        task.CompletedAt = DateTime.UtcNow;
-                    }
-                    else if (!task.IsCompleted)
-                    {
-                        task.CompletedAt = null;
-                    }
-                }
-
-                if (taskUpdateDto.Priority.HasValue)
-                {
-                    task.Priority = taskUpdateDto.Priority.Value;
-                }
-
-                await _context.SaveChangesAsync();
-
-                var taskResponse = new TaskResponseDto
-                {
-                    Id = task.Id,
-                    Title = task.Title,
-                    Description = task.Description,
-                    IsCompleted = task.IsCompleted,
-                    CreatedAt = task.CreatedAt,
-                    CompletedAt = task.CompletedAt,
-                    Priority = task.Priority
-                };
 
                 return Ok(taskResponse);
             }
@@ -204,14 +112,13 @@ namespace TaskManagerApi.Controllers
         {
             try
             {
-                var task = await _context.Tasks.FindAsync(id);
-                if (task == null)
+                var command = new DeleteTaskCommand(id);
+                var success = await _dispatcher.DispatchAsync(command, CancellationToken.None);
+
+                if (!success)
                 {
                     return NotFound($"Task with ID {id} not found");
                 }
-
-                _context.Tasks.Remove(task);
-                await _context.SaveChangesAsync();
 
                 return NoContent();
             }
